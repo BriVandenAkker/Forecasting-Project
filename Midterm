@@ -1,0 +1,211 @@
+rm(list = ls())
+cat("\f")
+
+library.list <- c("ggplot2", "forecast", "tseries", "urca")
+for (i in 1:length(library.list)) {
+  if (!library.list[i] %in% rownames(installed.packages())) {
+    install.packages(library.list[i])
+  }
+  library(library.list[i], character.only = TRUE)
+}
+rm(library.list)
+
+data <- read.csv(file.choose())
+
+tenYr <- ts(data$X10yr, start = 1962)
+oneYr <- ts(data$GS1, start = 1962)
+adjR <- ts(data$adj_r, start = 1962)
+nomG <- ts(data$nomG, start = 1962)
+
+
+autoplot(nomG) +
+  autolayer(tenYr) +
+  ggtitle("Nominal: GDP Growth, Ten Year Treasury Bond Rate") +
+  xlab("Year") + ylab("Rate")
+
+autoplot(nomG) +
+  autolayer(oneYr) +
+  ggtitle("Nominal: GDP Growth, One Year Treasury Bill Rate") +
+  xlab("Year") + ylab("Rate")
+
+#A better visualization
+autoplot(nomG - tenYr) +
+  ggtitle("Growth - Ten Year (or Fiscal Leverage)") +
+  xlab("Year") + ylab("Spread")
+
+autoplot(nomG - oneYr) +
+  ggtitle("Growth - One Year (or Fiscal Leverage)") +
+  xlab("Year") + ylab("Spread")
+
+#On average, growth is higher than safe interest rates
+mean(data$nomG - data$X10yr)
+mean(data$nomG - data$GS1)
+
+#A more intelligible measure for our purposes.
+autoplot(nomG) +
+  autolayer(adjR) +
+  ggtitle("Nominal: GDP Growth, Blanchard's Adjusted Rate") +
+  xlab("Year") + ylab("Rate")
+
+autoplot(nomG - adjR) +
+  ggtitle("Growth - Blanchard's Adjusted Rate") +
+  xlab("Year") + ylab("Spread")
+
+spread1 <- data$nomG - data$adj_r
+mean(spread1)
+sum((spread1) < 0)/nrow(data)
+#Historically negative 14% of the years observed, largely during era of stagflation in the 80's. 
+
+ggtsdisplay(nomG)
+ggtsdisplay(adjR)
+
+
+#Decompose
+plot(diff(adjR))
+plot(diff(nomG))
+
+simpleForecast <- function(x){
+    autoplot(x) +
+      autolayer(meanf(x, h=10),
+                series="Mean", PI=FALSE) +
+      autolayer(rwf(x, h=10),
+                series="Naïve", PI=FALSE) +
+      autolayer(rwf(x, drift=TRUE, h=10),
+                series="Drift", PI= FALSE) +
+      ggtitle("Simple Forecasts") +
+      xlab("Year") + ylab("Rate") +
+      guides(colour=guide_legend(title="Forecast"))
+}
+simpleForecast(nomG)
+simpleForecast(adjR)
+
+
+#ETS
+ets(nomG)
+ets(adjR)
+
+nomG %>% ets() %>% forecast(h=10) %>% autoplot()
+adjR %>% ets() %>% forecast(h=10) %>% autoplot()
+
+checkresiduals(ets(nomG))
+checkresiduals(ets(adjR))
+
+#=============================================================
+#ARIMA
+#=============================================================
+
+ggtsdisplay(diff(nomG))
+Box.test(diff(nomG), lag=10, type="Ljung-Box")
+
+ggtsdisplay(diff(adjR))
+Box.test(diff(nomG), lag=10, type="Ljung-Box")
+
+nomG %>% ur.kpss() %>% summary()
+adjR %>% ur.kpss() %>% summary()
+
+nomG %>% diff() %>% ur.kpss() %>% summary()
+adjR %>% diff() %>% ur.kpss() %>% summary()
+
+arimaG <- auto.arima(diff(nomG), seasonal = FALSE)
+arimaR <- auto.arima(diff(adjR), seasonal = FALSE)
+
+arimaG %>% forecast(h=10) %>% autoplot(include=80) +
+  xlab("Year") + ylab("Rate")
+arimaR %>% forecast(h=10) %>% autoplot(include=80) +
+  xlab("Year") + ylab("Rate")
+
+checkresiduals(arimaG)
+checkresiduals(arimaR)
+
+#=============================================================
+#Compare ARIMA vs ETS
+#=============================================================
+
+fETS <- function(x, h) {
+  forecast(ets(x), h = h)
+}
+
+fARIMA <- function(x, h) {
+  forecast(auto.arima(x), h=h)
+}
+
+#ETS CV
+nomGe1 <- tsCV(nomG, fETS, h=1)
+adjRe1 <- tsCV(adjR, fETS, h=1)
+
+#ETS MSE
+mean(nomGe1^2, na.rm=TRUE)
+mean(adjRe1^2, na.rm=TRUE)
+
+#ETS MAE
+mean(abs(nomGe1), na.rm=TRUE)
+mean(abs(adjRe1), na.rm=TRUE)
+
+#Arima CV
+nomGe2 <- tsCV(diff(nomG), fARIMA, h=1)
+adjRe2 <- tsCV(diff(adjR), fARIMA, h=1)
+
+#ARIMA MSE
+mean(nomGe2^2, na.rm=TRUE)
+mean(adjRe2^2, na.rm=TRUE)
+
+#ARIMA MAE
+mean(abs(nomGe2), na.rm=TRUE)
+mean(abs(adjRe2), na.rm=TRUE)
+
+#We see ETS model has lower MSE/MAE
+
+#Method 1 Predictions for Growth - Adjusted Rate
+growthF <- forecast(ets(nomG))
+adjRateF <- forecast(ets(adjR))
+
+levPointF <- (growthF$mean - adjRateF$mean)
+levLowerF <- (growthF$lower - adjRateF$lower)
+levUpperF <- (growthF$upper - adjRateF$upper)
+autoplot(levPointF) + 
+  autolayer(levLowerF) + autolayer(levUpperF)
+autoplot(levLowerF)
+#The forecast suggests the adjusted rate will rise while growth will stagnate
+#leading to negative fiscal leveraging spread. Suggests US fiscal policy should
+#focus on reducing debt.
+
+#Method 2 
+spread <- ts(spread1, start=1962)
+autoplot(spread)
+
+#ETS
+ets(spread)
+spread %>% ets() %>% forecast(h=10) %>% autoplot()
+
+checkresiduals(ets(spread))
+
+#ARIMA
+ggtsdisplay(diff(spread))
+Box.test(diff(spread), lag=10, type="Ljung-Box")
+
+spread %>% ur.kpss() %>% summary()
+spread %>% diff() %>% ur.kpss() %>% summary()
+
+arimaS <- auto.arima(diff(spread), seasonal = FALSE)
+
+arimaS %>% forecast(h=10) %>% autoplot(include=80) +
+  xlab("Year") + ylab("Spread")
+
+checkresiduals(arimaS)
+
+#ETS CV
+spreade1 <- tsCV(spread, fETS, h=1)
+spreade2 <- tsCV(diff(spread), fARIMA, h=1)
+
+#ETS MSE
+mean(spreade1^2, na.rm=TRUE)
+#ARIMA MSE
+mean(spreade2^2, na.rm=TRUE)
+#ETS MAE
+mean(abs(spreade1), na.rm=TRUE)
+#ARIMA MAE
+mean(abs(spreade2), na.rm=TRUE)
+#Again, ETS shows lower MSE/MAE
+
+autoplot(forecast(ets(spread)))
+#Here we see a slightly better case for maintaining current debt amount or even increasing by some amount
