@@ -1,0 +1,138 @@
+rm(list = ls())
+cat("\f")
+
+library.list <- c("ggplot2", "forecast", "tseries", "urca")
+for (i in 1:length(library.list)) {
+  if (!library.list[i] %in% rownames(installed.packages())) {
+    install.packages(library.list[i])
+  }
+  library(library.list[i], character.only = TRUE)
+}
+rm(library.list)
+
+#Note data ends short in 2014 compared to interest rate records
+data <- read.csv(file.choose())
+
+#GDP Predictions
+
+#Assume a Cobb-Douglas Production Function with beta = (1/3)
+#Utilize growth accounting method.
+
+tfp <- data$ga
+gk <- data$gk
+gl <- data$gl
+a<- (1/3)
+
+gy <- tfp + a*gk + (1-a)*gl
+plot(gy)
+
+#predict these
+tfp <- ts(tfp, start = 1962) #excluding food and energy
+gk <- ts(gk, start = 1962)
+gl<- ts(gl, start = 1962)
+
+autoplot(tfp) +
+  ggtitle("Total Factor Productivity: Rate of Growth") +
+  xlab("Year") + ylab("Rate")
+
+autoplot(gk) + 
+  ggtitle("Capital Stock: Rate of Growth") +
+  xlab("Year") + ylab("Rate")
+
+autoplot(gl) +
+  ggtitle("Labor Force: Rate of Growth") + 
+  xlab("Year") + ylab("Rate")
+
+#=======================================================================
+#ETS Forecast
+#=======================================================================
+ets(tfp)
+ets(gk)
+ets(gl)
+
+tfp %>% ets() %>% forecast(h=14) %>% autoplot()
+gk %>% ets() %>% forecast(h=14) %>% autoplot()
+gl %>% ets() %>% forecast(h=14) %>% autoplot()
+
+checkresiduals(ets(tfp))
+checkresiduals(ets(gk))
+checkresiduals(ets(gl))
+
+
+#========================================================================
+#ARIMA Forecast
+#========================================================================
+ggtsdisplay(tfp)  #Differenced twice
+Box.test(tfp)), lag=10, type="Ljung-Box")
+
+ggtsdisplay(diff(gk))
+Box.test(diff(gk), lag=10, type="Ljung-Box")
+
+ggtsdisplay(diff(gl))
+Box.test(diff(gl), lag=10, type="Ljung-Box")
+
+tfp %>% ur.kpss() %>% summary()
+gk %>% ur.kpss() %>% summary()
+gl %>% ur.kpss()%>% summary()
+
+tfp %>% diff() %>% diff() %>% ur.kpss() %>% summary() #Differenced Twice
+gk %>% diff() %>% ur.kpss() %>% summary()
+gl %>% diff() %>% diff() %>% ur.kpss() %>% summary() #Differenced Twice
+
+tfpArima <- auto.arima(tfp, seasonal = FALSE)
+gkArima <- auto.arima(gk, seasonal = FALSE)
+glArima <- auto.arima(gl, seasonal = FALSE)
+
+
+tfpArima %>% forecast(h=10) %>% autoplot(include=80) +
+  xlab("Year") + ylab("TFP Growth")
+
+gkArima %>% forecast(h=10) %>% autoplot(include=80) +
+  xlab("Year") + ylab("Capital Stock Growth")
+
+glpArima %>% forecast(h=10) %>% autoplot(include=80) +
+  xlab("Year") + ylab("Labor Force Growth")
+
+checkresiduals(tfpArima)
+checkresiduals(gkArima)
+checkresiduals(glpArima)
+#========================================================================
+#Compare Models
+#========================================================================
+
+fETS <- function(x, h) {
+  forecast(ets(x), h = h)
+}
+
+fARIMA <- function(x, h) {
+  forecast(auto.arima(x), h=h)
+}
+
+#ETS CV
+tfpe1 <- tsCV(tfp, fETS, h=1)
+ffre1 <- tsCV(gk, fETS, h=1)
+rgdpe1 <- tsCV(gl, fETS, h=1)
+
+#Arima CV
+tfpe2 <- tsCV(tfp, fARIMA, h=1)
+gke2 <- tsCV(gk, fARIMA, h=1)
+gle2 <- tsCV(gl, fARIMA, h=1)
+
+
+#ETS MSE
+mean(tfpe1^2, na.rm=TRUE)
+mean(gke1^2, na.rm=TRUE)
+mean(gle1^2, na.rm=TRUE)
+
+#ARIMA MSE
+mean(tfpe2^2, na.rm=TRUE)
+mean(gke2^2, na.rm=TRUE)
+mean(gle2^2, na.rm=TRUE)
+#ARIMA is showing lower cross validated errors. 
+##!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+forecastTfp <- forecast(auto.arima(tfp))
+forecastGk <- forecast(auto.arima(gk))
+forecastGl <- forecast(auto.arima(gl))
+
+forecastGY <- forecastTfp + a*(forecastGk) + (1-a)*forecastGl
+
