@@ -1,0 +1,135 @@
+data <- read.csv(file.choose())
+
+
+#Note these variables were taken from Blanchard's 2018 paper
+mat <- data$maturity
+tau <- data$tau
+beta <- data$beta
+#=======================================================================
+#ETS Forecast
+#=======================================================================
+ets(mat)
+ets(tau)
+ets(beta)
+
+mat %>% ets() %>% forecast(h=10) %>% autoplot()
+tau %>% ets() %>% forecast(h=10) %>% autoplot()
+beta %>% ets() %>% forecast(h=10) %>% autoplot()
+
+checkresiduals(ets(mat))
+checkresiduals(ets(tau))
+checkresiduals(ets(beta))
+
+
+#========================================================================
+#ARIMA Forecast
+#========================================================================
+ggtsdisplay(diff(mat))  #Differenced
+Box.test(diff(mat), lag=10, type="Ljung-Box")
+
+ggtsdisplay(diff(tau))
+Box.test(diff(tau), lag=10, type="Ljung-Box")
+
+ggtsdisplay(diff(beta))
+Box.test(diff(beta), lag=10, type="Ljung-Box")
+
+mat %>% ur.kpss() %>% summary()
+tau %>% ur.kpss() %>% summary()
+beta %>% ur.kpss()%>% summary()
+
+mat %>% diff() %>% ur.kpss() %>% summary() #Differenced Twice
+tau %>% diff() %>% ur.kpss() %>% summary()
+beta %>% diff() %>% ur.kpss() %>% summary() #Differenced Twice
+
+matArima <- auto.arima(mat, seasonal = FALSE)
+tauArima <- auto.arima(tau, seasonal = FALSE)
+betaArima <- auto.arima(beta, seasonal = FALSE)
+
+
+matArima %>% forecast(h=10) %>% autoplot(include=80) +
+  xlab("Year") + ylab("Maturity")
+
+tauArima %>% forecast(h=10) %>% autoplot(include=80) +
+  xlab("Year") + ylab("Tau")
+
+betaArima %>% forecast(h=10) %>% autoplot(include=80) +
+  xlab("Year") + ylab("Beta")
+
+checkresiduals(matArima)
+checkresiduals(tauArima)
+checkresiduals(betaArima)
+
+#========================================================================
+#Compare Models
+#========================================================================
+
+fETS <- function(x, h) {
+  forecast(ets(x), h = h)
+}
+
+fARIMA <- function(x, h) {
+  forecast(auto.arima(x), h=h)
+}
+
+#ETS CV
+mate1 <- tsCV(mat, fETS, h=1)
+taue1 <- tsCV(tau, fETS, h=1)
+betae1 <- tsCV(beta, fETS, h=1)
+
+#Arima CV
+mate2 <- tsCV(diff(mat), fARIMA, h=1)
+taue2 <- tsCV(diff(tau), fARIMA, h=1)
+betae2 <- tsCV(diff(beta), fARIMA, h=1)
+
+
+#ETS MSE
+mean(mate1^2, na.rm=TRUE)
+mean(taue1^2, na.rm=TRUE)
+mean(betae1^2, na.rm=TRUE)
+
+#ARIMA MSE
+mean(mate2^2, na.rm=TRUE)
+mean(taue2^2, na.rm=TRUE)
+mean(betae2^2, na.rm=TRUE)
+#Ambiguous Results, lets use ARIMA
+
+mat_f <- forecast(auto.arima(mat))
+tau_f <- forecast(auto.arima(tau))
+beta_f <- forecast(auto.arima(beta))
+
+mat_f <- mat_f$mean
+tau_f <- tau_f$mean
+beta_f <- beta_f$mean
+
+#Following Blanchard =((10-F2)/9)*E2 + ((-1+F2)/9)*B2
+z1 <- ((10 - mat_f)/9)[1] 
+z2 <- ((-1+mat_f)/9)[1]
+r <- z1*f2 + z2*f1
+
+tb <- (1- tau_f*beta_f)
+
+u = 0
+adj_fr = c()
+for(x in tb){
+  u = u+1
+  adj_hold <- x*r[u]
+  adj_fr[u] <- adj_hold
+}
+
+adj_fr = ts(adj_fr, start = 2019)
+
+autoplot(pastG) + 
+  autolayer(oneyr) + 
+  autolayer(nomGrowth) +
+  autolayer(adj_fr) +
+  ggtitle("Growth - Adjusted Rate: Plot") +
+  xlab("Year") + ylab("Rate")
+
+adjSpread_f <- nomGrowth - adj_fr
+
+#Spread With Adjusted Rate Predicts and Increase
+autoplot(spread_10_past) + 
+  autolayer(adjSpread_f) +
+  ggtitle("Growth - Adjusted Rate: Spread") +
+  ylab("Spread") + xlab("Year")
+
