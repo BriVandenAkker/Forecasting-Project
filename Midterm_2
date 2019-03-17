@@ -1,0 +1,168 @@
+rm(list = ls())
+cat("\f")
+
+library.list <- c("ggplot2", "forecast", "tseries", "urca")
+for (i in 1:length(library.list)) {
+  if (!library.list[i] %in% rownames(installed.packages())) {
+    install.packages(library.list[i])
+  }
+  library(library.list[i], character.only = TRUE)
+}
+rm(library.list)
+
+data <- read.csv(file.choose())
+
+#Transform GDP, CPI
+rgdp <- log(data$rgdp)
+cpi <- log(data$cpi)
+
+#predict these
+cpi <- ts(cpi, start = 1962) #excluding food and energy
+rgdp <- ts(rgdp, start = 1962)
+ffr <- ts(data$ffr, start = 1962)
+
+autoplot(cpi) +
+  ggtitle("CPI, Less Food and Energy") +
+  xlab("Year") + ylab("CPI")
+
+autoplot(rgdp) + 
+  ggtitle("Real Gross Domestic Product") +
+  xlab("Year") + ylab("RGDP")
+
+autoplot(ffr) +
+  ggtitle("Effective Federal Funds Rate") + 
+  xlab("Year") + ylab("Rate")
+
+#=======================================================================
+#ETS Forecast
+#=======================================================================
+ets(cpi)
+ets(ffr)
+ets(rgdp)
+
+cpi %>% ets() %>% forecast(h=10) %>% autoplot()
+ffr %>% ets() %>% forecast(h=10) %>% autoplot()
+rgdp %>% ets() %>% forecast(h=10) %>% autoplot()
+
+checkresiduals(ets(cpi))
+checkresiduals(ets(ffr))
+checkresiduals(ets(rgdp))
+
+
+#========================================================================
+#ARIMA Forecast
+#========================================================================
+ggtsdisplay(diff(diff(cpi)))  #Differenced twice
+Box.test(diff(diff(cpi)), lag=10, type="Ljung-Box")
+
+ggtsdisplay(diff(ffr))
+Box.test(diff(ffr), lag=10, type="Ljung-Box")
+
+ggtsdisplay(diff(rgdp))
+Box.test(diff(rgdp), lag=10, type="Ljung-Box")
+
+cpi %>% ur.kpss() %>% summary()
+ffr %>% ur.kpss() %>% summary()
+rgdp %>% ur.kpss()%>% summary()
+
+cpi %>% diff() %>% diff() %>% ur.kpss() %>% summary() #Differenced Twice
+ffr %>% diff() %>% ur.kpss() %>% summary()
+rgdp %>% diff() %>% diff() %>% ur.kpss() %>% summary() #Differenced Twice
+
+cpiArima <- auto.arima((rgdp), seasonal = FALSE)
+cpiArima <- auto.arima(diff(diff(cpi)), seasonal = FALSE)
+ffrArima <- auto.arima(diff(ffr), seasonal = FALSE)
+rgdpArima <- auto.arima(diff(diff(rgdp)), seasonal = FALSE)
+
+cpiArima %>% forecast(h=10) %>% autoplot(include=80) +
+  xlab("Year") + ylab("Differenced Log CPI")
+
+ffrArima %>% forecast(h=10) %>% autoplot(include=80) +
+  xlab("Year") + ylab("Differenced Rate")
+
+rgdpArima %>% forecast(h=10) %>% autoplot(include=80) +
+  xlab("Year") + ylab("Differenced Log RGDP")
+
+checkresiduals(cpiArima)
+checkresiduals(ffrArima)
+checkresiduals(rgdpArima)
+#========================================================================
+#Compare Models
+#========================================================================
+
+fETS <- function(x, h) {
+  forecast(ets(x), h = h)
+}
+
+fARIMA <- function(x, h) {
+  forecast(auto.arima(x), h=h)
+}
+
+#ETS CV
+cpie1 <- tsCV(cpi, fETS, h=1)
+ffre1 <- tsCV(ffr, fETS, h=1)
+rgdpe1 <- tsCV(rgdp, fETS, h=1)
+
+#Arima CV
+cpie2 <- tsCV(diff(diff(cpi)), fARIMA, h=1)
+ffre2 <- tsCV(diff(ffr), fARIMA, h=1)
+rgdpe2 <- tsCV(diff(diff(rgdp)), fARIMA, h=1)
+
+
+#ETS MSE
+mean(cpie1^2, na.rm=TRUE)
+mean(ffre1^2, na.rm=TRUE)
+mean(rgdpe1^2, na.rm=TRUE)
+
+#ARIMA MSE
+mean(cpie2^2, na.rm=TRUE)
+mean(ffre2^2, na.rm=TRUE)
+mean(rgdpe2^2, na.rm=TRUE)
+#ARIMA is showing lower cross validated errors. 
+
+forecastcpi <- forecast(auto.arima(cpi))
+forecastffr <- forecast(auto.arima(ffr))
+forecastrgdp <- forecast(auto.arima(rgdp))
+
+# Train The Model to make interest rate predictions
+y1 <- data$tenyr
+y2 <- data$oneyr
+x1 <- cpi
+x2 <- ffr
+x3 <- rgdp
+
+fit1 <- lm(y1 ~ cpi + ffr + rgdp, data=data)
+summary(fit1)
+plot(fit1)
+
+fit2 <- lm(y2 ~ cpi + ffr + rgdp, data=data)
+summary(fit2)
+plot(fit2)
+
+#Apply Test Set (Predictions)
+
+c <- exp(forecastcpi$mean)
+f <- forecastffr$mean
+g<- exp(forecastrgdp$mean)
+
+test_data <- data.frame(cpi = c, ffr = f, rgdp = g)
+
+
+tenYrForecast <- predict(fit1, test_data)
+oneYrForecast <- predict(fit2, test_data)
+
+tenyr <- ts(data$tenyr, start = 1962)
+oneyr <- ts(data$oneyr, start = 1962)
+
+f1 <- ts(tenYrForecast, start = 2019)
+f2 <- ts(oneYrForecast, start = 2019)
+
+autoplot(tenyr) + 
+  autolayer(f1) +
+  ggtitle("Ten Year Treasury Forecast")
+
+autoplot(oneyr) + 
+  autolayer(f2) +
+  ggtitle("One Year Treasury Forecast")
+  
+
