@@ -59,6 +59,7 @@ checkresiduals(matArima)
 checkresiduals(tauArima)
 checkresiduals(betaArima)
 
+
 #========================================================================
 #Compare Models
 #========================================================================
@@ -116,11 +117,11 @@ for(x in tb){
   adj_fr[u] <- adj_hold
 }
 
-adj_fr = ts(adj_fr, start = 2019)
+adj_fr = ts(adj_fr, start = 2014)
 
 autoplot(pastG) + 
-  autolayer(oneyr) + 
   autolayer(nomGrowth) +
+  autolayer(adjR) +
   autolayer(adj_fr) +
   ggtitle("Growth - Adjusted Rate: Plot") +
   xlab("Year") + ylab("Rate")
@@ -128,8 +129,27 @@ autoplot(pastG) +
 adjSpread_f <- nomGrowth - adj_fr
 
 #Spread With Adjusted Rate Predicts and Increase
-autoplot(spread_10_past) + 
+autoplot(spread) + 
   autolayer(adjSpread_f) +
   ggtitle("Growth - Adjusted Rate: Spread") +
   ylab("Spread") + xlab("Year")
 
+method1 <- forecast(ets(spread), h = 5)$mean
+method2 <- levPointF
+method3 <- adjSpread_f
+
+test_data <- read.csv(file.choose())
+test <- test_data$nomG - test_data$adj_r
+test <- ts(test, start = 2014)
+test_df <- data.frame(test=as.matrix(test), method1=as.matrix(method1), method2=as.matrix(method2), method3=as.matrix(method3))
+
+#Test MSE to choose optimal model
+
+#Method 1
+mse1 <- mean((test_df$method1 - test_df$test)^2)
+mse2 <- mean((test_df$method2 - test_df$test)^2)
+mse3 <- mean((test_df$method3 - test_df$test)^2)
+
+mse1
+mse2
+mse3
