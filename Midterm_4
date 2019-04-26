@@ -153,3 +153,47 @@ mse3 <- mean((test_df$method3 - test_df$test)^2)
 mse1
 mse2
 mse3
+
+
+######
+##Method 4
+##Dynamic Regression with auto.arima
+######
+#Include relevent variables for interest rates as discussed: federal funds rate, expected inflation, and real gdp growth
+#Regressed on adjusted_r from Blanchard's paper.
+reg1 <- auto.arima(data$adj_r, xreg = data$cpi + data$ffr + data$rgdp)
+
+#See if errors are white noise for ARIMA component
+cbind("Regression Errors" = residuals(reg1, type="regression"),
+      "ARIMA errors" = residuals(reg1, type="innovation")) %>%
+  autoplot(facets=TRUE)
+
+checkresiduals(reg1) #Yes these are whitenoise with a normal distribution. Assumptions satisfied
+
+reg2 <- auto.arima(data$nomG, xreg = data$gk + data$gl + data$ga)
+
+#See if errors are white noise, again only for the ARIMA component
+cbind("Regression Errors" = residuals(reg2, type="regression"),
+      "ARIMA errors" = residuals(reg2, type="innovation")) %>%
+  autoplot(facets=TRUE)
+
+checkresiduals(reg2) #Again, these are white noise for the ARIMA portion.
+
+summary(reg1)
+summary(reg2)
+
+#Make forecasts
+fcast1 <- forecast(reg1, xreg = rep(tail(data$cpi,1) + tail(data$ffr,1) + tail(data$rgdp,1),5))
+autoplot(fcast) + ylab("Adjusted Interest Rate")
+
+fcast2 <- forecast(reg2, xreg = rep(tail(data$gk,1) + tail(data$gl,1) + tail(data$ga,1),5))
+autoplot(fcast) + ylab("Nominal Growth")
+
+spread <- fcast1$mean - fcast2$mean
+autoplot(spread)
+
+spread <- as.numeric(spread)
+test <- as.numeric(test)
+
+mse <- mean((spread - test)^2)
+
